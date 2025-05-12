@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Namens-Suchtool mit lokaler CSV</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 5vh 5vw;
+            background-color: #f4f4f4;
+        }
+        input {
+            padding: 2vh;
+            width: 80vw;
+            margin-bottom: 2vh;
+            font-size: 2vh;
+        }
+        button {
+            padding: 2vh 3vw;
+            font-size: 2vh;
+            cursor: pointer;
+        }
+        #output {
+            margin-top: 3vh;
+            font-weight: bold;
+            white-space: pre-wrap;
+            text-align: left;
+            padding: 0;
+            margin: 0;
+            font-size: 2vh;
+        }
+        .ktw { color: rgb(48, 128, 48); }
+        .azubi { color: white; background-color: black; padding: 2px; }
+        .rtw-schwarz { color: black; font-weight: bold; }
+        .rtw-weiss { color: white; background-color: black; padding: 2px; }
+        .rtw-blau { color: rgb(51, 51, 240); }
+        .rtw-rot { color: rgb(201, 36, 36); }
+        .rtw-gelb { color: #FFCC00; }
+        .default { color: black; }
+        .fach-grid {
+            display: grid;
+            grid-template-columns: repeat(11, 8vw);
+            gap: 1vw;
+            margin-top: 2vh;
+        }
+        .fach {
+            width: 8vw;
+            height: 8vw;
+            background-color: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 0.2vw solid #aaa;
+            font-size: 1.5vh;
+        }
+        .fach.active {
+            font-weight: bold;
+            box-shadow: 0 0 1vw;
+        }
+    </style>
+</head>
+<body>
+    <h2 id="loginText">Login</h2>
+    <input type="password" id="passwordInput" placeholder="Passwort eingeben..." onkeypress="if(event.key === 'Enter') checkPassword()">
+    <button onclick="checkPassword()">Login</button>
+
+    <div id="searchSection" style="display: none;">
+        <h2>Namens-Suchtool</h2>
+        <input type="text" id="searchInput" placeholder="Name eingeben..." onkeypress="if(event.key === 'Enter') searchName()">
+        <button onclick="searchName()">Suchen</button>
+        <p id="output"></p>
+        <div id="fachGrid" class="fach-grid" style="display: none;"></div>
+    </div>
+
+    <script>
+        const correctPassword = "123";
+
+        function checkPassword() {
+            const enteredPassword = document.getElementById("passwordInput").value;
+            if (enteredPassword === correctPassword) {
+                document.getElementById("searchSection").style.display = "block";
+                document.getElementById("passwordInput").style.display = "none";
+                document.querySelector("button[onclick='checkPassword()']").style.display = "none";
+                document.getElementById("loginText").style.display = "none";
+            } else {
+                alert("Falsches Passwort!");
+            }
+        }
+
+        const colorMapping = {
+            "KTW": "#90EE90",
+            "Azubi": "white",
+            "RTW Schwarz": "black",
+            "RTW Weiß": "white",
+            "RTW Blau": "#1035AC",
+            "RTW Rot": "#FFA07A",
+            "RTW Gelb": "#FFCC00",
+        };
+
+        function getColorForArea(area) {
+            return colorMapping[area] || "black";
+        }
+
+        function renderFachGrid(row, col, color) {
+            const grid = document.getElementById('fachGrid');
+            grid.style.display = 'grid';
+            grid.innerHTML = '';
+            for (let r = 1; r <= 6; r++) {
+                for (let c = 1; c <= 11; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('fach');
+                    cell.textContent = `${r}-${c}`;
+                    if (r === row && c === col) {
+                        cell.classList.add('active');
+                        const borderColor = color === 'white' ? 'black' : color;
+                        cell.style.borderColor = borderColor;
+                        cell.style.boxShadow = `0 0 5px ${borderColor}`;
+                    }
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        async function loadData() {
+            try {
+                document.getElementById('output').innerText = "Lade Daten..."; // Show loading message
+                const response = await fetch('daten.json');
+                if (!response.ok) throw new Error(`Fehler beim Laden der Daten: ${response.statusText}`);
+                const data = await response.json();
+                console.log("Daten erfolgreich geladen:", data); // Debugging
+                return data;
+            } catch (error) {
+                console.error("Fehler beim Laden der Daten:", error);
+                document.getElementById('output').innerText = "Fehler beim Laden der Daten. Bitte überprüfen Sie die Datei 'daten.json'.";
+                return null; // Return null to indicate failure
+            }
+        }
+
+        /**
+         * Performs a simple fuzzy match by checking if the `query` is a substring of `text`.
+         * Both `query` and `text` are converted to lowercase for case-insensitive matching.
+         */
+        function fuzzyMatch(query, text) {
+            return text.includes(query);
+        }
+
+        async function searchName() {
+            const input = document.getElementById('searchInput').value.trim().toLowerCase();
+            if (!input) {
+                document.getElementById('output').innerText = "Bitte geben Sie einen Namen ein.";
+                return;
+            }
+
+            const data = await loadData(); // Fetch data using the new function
+            if (!data || !Array.isArray(data) || data.length === 0) {
+                document.getElementById('output').innerText = "Keine Daten gefunden oder Daten ungültig.";
+                console.error("Ungültige Datenstruktur:", data); // Debugging
+                return;
+            }
+
+            const found = data.filter(entry => fuzzyMatch(input, entry.Name?.toLowerCase() || ""));
+            console.log("Gefundene Einträge:", found); // Debugging
+
+            const preferredLocations = ["fächer im gang", "schrank 1 ktw", "schrank 2 rtw", "kisten auf schrank"];
+            const displayRows = [];
+
+            found.forEach(entry => {
+                const fullName = entry.Name.toLowerCase();
+                const existingEntry = displayRows.find(row => row.name === fullName);
+
+                if (existingEntry) {
+                    if (preferredLocations.includes(entry.Ort.toLowerCase())) {
+                        existingEntry.entry = entry;
+                    }
+                } else {
+                    displayRows.push({ name: fullName, entry });
+                }
+            });
+
+            document.getElementById('output').innerHTML = displayRows.length
+                ? displayRows.map(row => {
+                    const entry = row.entry;
+                    const color = getColorForArea(entry.Arbeitsbereich);
+                    const textShadow = color === 'white' ? '0 0 3px black, 0 0 5px black' : '0px 0px 0px rgba(0,0,0,0.7)';
+                    const outputText = `<p style="color: ${color}; font-weight: bold; text-shadow: ${textShadow}; margin: 0; padding: 0; text-align: left;">
+                        <br>${entry.Name} ist in:<strong> ${entry.Ort}</strong>,<br> Reihe: ${entry.Reihe}, Arbeitsbereich: ${entry.Arbeitsbereich}
+                    </p>`;
+
+                    if (entry.Ort.toLowerCase() === "fächer im gang") {
+                        const [reihe, position] = entry.Reihe.split('-').map(Number);
+                        renderFachGrid(reihe, position, color);
+                    } else {
+                        document.getElementById('fachGrid').style.display = 'none';
+                    }
+                    return outputText;
+                }).join('')
+                : "Name nicht gefunden.";
+        }
+    </script>
+</body>
+</html>
